@@ -1,5 +1,4 @@
-use mmap_io::{MemoryMappedFile, ChangeEvent};
-use std::{fs, path::PathBuf, sync::{Arc, RwLock}, io, error::Error};
+use std::{fs, path::PathBuf, sync::{Arc, RwLock}, io, error::Error, thread, time::Duration};
 use may_minihttp::{HttpServer, HttpService, Request, Response};
 
 // Find the first `.breach` file in the current directory
@@ -17,15 +16,18 @@ fn get_breach() -> io::Result<Option<PathBuf>> {
     Ok(None)
 }
 
-// Read the file contents initially
-fn read_initial(path: &PathBuf) -> io::Result<Vec<u8>> {
-    fs::read(path)
+// Read the file contents on demand
+fn read_file_content(path: &PathBuf) -> Result<Vec<u8>, Box<dyn Error>> {
+    let content = fs::read(path)?;
+    Ok(content)
 }
 
 #[derive(Clone)]
 struct Page {
     /// Shared, up-to-date contents of the breach file
     content: Arc<RwLock<Vec<u8>>>,
+    /// Path to the breach file for getting metadata
+    file_path: PathBuf,
 }
 
 impl HttpService for Page {
@@ -34,7 +36,20 @@ impl HttpService for Page {
         // If you prefer to return raw bytes, adapt to your response API.
         let data = self.content.read().unwrap();
         let body_string = String::from_utf8_lossy(&*data).into_owned();
+
+        // Get file metadata for cache headers
+        let _metadata = fs::metadata(&self.file_path).ok();
+
         res.header("Content-Type: text/plain; charset=utf-8");
+
+        // Aggressive cache control headers for live reload
+        res.header("Cache-Control: no-cache, no-store, must-revalidate, max-age=0");
+        res.header("Pragma: no-cache");
+        res.header("Expires: 0");
+
+        // Note: Dynamic headers would be added here for Last-Modified and ETag
+        // but may_minihttp requires &'static str, so we're focusing on cache control for now
+
         res.body_vec(body_string.into_bytes());
         Ok(())
     }
@@ -51,35 +66,59 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // Read initial contents
-    let initial = read_initial(&breach_path)?;
+    let initial = read_file_content(&breach_path)?;
     let content = Arc::new(RwLock::new(initial));
 
-    // Open a memory-mapped file (read-only) so we can watch it
-    let mmap = MemoryMappedFile::open_ro(breach_path.clone())?;
-
-    // Keep the watch handle alive for the lifetime of the program so the watch remains active.
-    // The closure updates the shared [`content`] when the file changes.
+    // Start file watching thread
     let content_for_watch = content.clone();
     let path_for_watch = breach_path.clone();
 
-    let _watch_handle = mmap.watch(move |_event: ChangeEvent| {
-        match fs::read(&path_for_watch) {
-            Ok(new_bytes) => {
-                let mut w = content_for_watch.write().unwrap();
-                *w = new_bytes;
-                println!("Breach file updated and content refreshed.");
+    thread::spawn(move || {
+        let mut last_modified = match fs::metadata(&path_for_watch) {
+            Ok(metadata) => metadata.modified().ok(),
+            Err(_) => None,
+        };
+        let mut last_len = match fs::metadata(&path_for_watch) {
+            Ok(metadata) => Some(metadata.len()),
+            Err(_) => None,
+        };
+
+        loop {
+            thread::sleep(Duration::from_millis(100)); // Poll every 100ms
+
+            let metadata = match fs::metadata(&path_for_watch) {
+                Ok(m) => m,
+                Err(_) => continue, // File might be temporarily unavailable
+            };
+
+            let current_len = metadata.len();
+            let current_modified = metadata.modified().ok();
+
+            // Check for changes
+            if current_modified != last_modified || Some(current_len) != last_len {
+                match read_file_content(&path_for_watch) {
+                    Ok(new_bytes) => {
+                        let mut w = content_for_watch.write().unwrap();
+                        *w = new_bytes;
+                        println!("Breach file updated and content refreshed.");
+                    }
+                    Err(e) => eprintln!("Failed to read updated breach file: {}", e),
+                }
+
+                last_modified = current_modified;
+                last_len = Some(current_len);
             }
-            Err(e) => eprintln!("Failed to read updated breach file: {}", e),
         }
-    })?;
+    });
 
     // Start HTTP server that serves the current content
-    let page = Page { content: content.clone() };
+    let page = Page { content: content.clone(), file_path: breach_path.clone() };
     let server = HttpServer(page).start("0.0.0.0:8080")?;
 
     println!("Server running on http://0.0.0.0:8080 serving {:?}", breach_path);
+    println!("File can be edited while the server is running (live reload)");
 
-    // Block here; watch handle and mmap stay alive until program exit
+    // Block here; server runs until interrupted
     if let Err(e) = server.join() {
         eprintln!("Server error: {:?}", e);
     }

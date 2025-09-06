@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 may = "0.3.51"
 may_minihttp = "0.1.11"
-mmap-io = { version = "0.9.3", features = ["watch"]}
+httpdate = "1.0"
