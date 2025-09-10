@@ -1,6 +1,6 @@
-use std::{error::Error, fs, path::PathBuf};
 use fxhash::FxHasher64;
 use std::hash::Hasher;
+use std::{error::Error, fs, path::PathBuf};
 
 /// Represents the parsed content sections from a .breach file.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -86,7 +86,8 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
             cur = Section::Css;
             continue;
         }
-        if starts_with_section_marker(line, "ts") || starts_with_section_marker(line, "typescript") {
+        if starts_with_section_marker(line, "ts") || starts_with_section_marker(line, "typescript")
+        {
             cur = Section::Ts;
             continue;
         }
@@ -105,9 +106,17 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
     let ts = ts_lines.join("\n");
 
     ParsedContent {
-        html: if html.trim().is_empty() { None } else { Some(html) },
+        html: if html.trim().is_empty() {
+            None
+        } else {
+            Some(html)
+        },
         js: if js.trim().is_empty() { None } else { Some(js) },
-        css: if css.trim().is_empty() { None } else { Some(css) },
+        css: if css.trim().is_empty() {
+            None
+        } else {
+            Some(css)
+        },
         ts: if ts.trim().is_empty() { None } else { Some(ts) },
     }
 }
@@ -124,7 +133,11 @@ pub fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
 fn extract_and_remove_title(html: &str) -> (String, Option<String>) {
     let mut result = html.to_string();
     let title_start = find_case_insensitive(html, "<title>");
-    let title_end = if title_start.is_some() { find_case_insensitive(html, "</title>") } else { None };
+    let title_end = if title_start.is_some() {
+        find_case_insensitive(html, "</title>")
+    } else {
+        None
+    };
     let title_content = if let (Some(ts), Some(te)) = (title_start, title_end) {
         Some(html[ts + "<title>".len()..te].trim().to_string())
     } else {
@@ -154,7 +167,10 @@ fn inject_css_link(html: &str, link_tag: &str, title_content: Option<&str>) -> S
         let mut result = html.to_string();
         let insert_at = html_open + "<html>".len();
         let head_content = if let Some(tc) = title_content {
-            format!("<head>\n    {}\n    <title>{}</title>\n</head>", link_tag, tc)
+            format!(
+                "<head>\n    {}\n    <title>{}</title>\n</head>",
+                link_tag, tc
+            )
         } else {
             format!("<head>\n    {}\n</head>", link_tag)
         };
@@ -162,9 +178,15 @@ fn inject_css_link(html: &str, link_tag: &str, title_content: Option<&str>) -> S
         result
     } else {
         let head_content = if let Some(tc) = title_content {
-            format!("<head>\n    <meta charset=\"utf-8\">\n    {}\n    <title>{}</title>\n</head>\n{}", link_tag, tc, html)
+            format!(
+                "<head>\n    <meta charset=\"utf-8\">\n    {}\n    <title>{}</title>\n</head>\n{}",
+                link_tag, tc, html
+            )
         } else {
-            format!("<head>\n    <meta charset=\"utf-8\">\n    {}\n</head>\n{}", link_tag, html)
+            format!(
+                "<head>\n    <meta charset=\"utf-8\">\n    {}\n</head>\n{}",
+                link_tag, html
+            )
         };
         head_content
     }
@@ -188,7 +210,10 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
     let (mut result, title_content) = extract_and_remove_title(html);
 
     if has_css {
-        let link_tag = format!(r#"<link rel="stylesheet" href="/style.css?v={}">"#, fingerprint);
+        let link_tag = format!(
+            r#"<link rel="stylesheet" href="/style.css?v={}">"#,
+            fingerprint
+        );
         result = inject_css_link(&result, &link_tag, title_content.as_deref());
     }
 
@@ -200,11 +225,9 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
     result
 }
 
-
-
 #[cfg(feature = "oxc_transformer")]
 pub fn compile_typescript_with_oxc(filename: &str, ts: &str) -> Result<String, String> {
-    use oxc_transformer::{TransformerOptions, transform};
+    use oxc_transformer::{transform, TransformerOptions};
 
     let opts = TransformerOptions::default();
 
@@ -227,7 +250,7 @@ pub fn compile_typescript_with_oxc(_filename: &str, ts: &str) -> Result<String, 
 
 #[cfg(feature = "oxc_transformer")]
 pub fn minify_js(js: &str) -> String {
-    use oxc_minifier::{MinifierOptions, minify};
+    use oxc_minifier::{minify, MinifierOptions};
 
     let opts = MinifierOptions::default();
     match minify("inline.js", js, &opts) {

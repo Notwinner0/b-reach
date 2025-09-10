@@ -1,15 +1,10 @@
-use std::{
-    error::Error,
-    fs,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{error::Error, fs, path::PathBuf, sync::Arc};
 
-use may_minihttp::HttpServer;
 use arc_swap::ArcSwap;
-use tracing::{info, error};
-use tracing_subscriber;
 use ctrlc;
+use may_minihttp::HttpServer;
+use tracing::{error, info};
+use tracing_subscriber;
 
 mod parser;
 mod server;

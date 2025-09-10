@@ -1,7 +1,7 @@
-use std::io;
-use may_minihttp::{HttpService, Request, Response};
-use arc_swap::ArcSwap;
 use crate::parser;
+use arc_swap::ArcSwap;
+use may_minihttp::{HttpService, Request, Response};
+use std::io;
 
 pub fn no_cache(res: &mut Response) {
     res.header("Cache-Control: no-cache");

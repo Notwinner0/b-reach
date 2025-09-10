@@ -1,9 +1,16 @@
-use std::{path::PathBuf, sync::Arc, thread, time::{Duration, Instant}};
-use notify::{Config, Error as NotifyError, Event, EventKind, RecursiveMode, Watcher, RecommendedWatcher};
-use crossbeam_channel::{unbounded, Sender};
-use arc_swap::ArcSwap;
 use crate::parser;
-use tracing::{info, error};
+use arc_swap::ArcSwap;
+use crossbeam_channel::{unbounded, Sender};
+use notify::{
+    Config, Error as NotifyError, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
+use tracing::{error, info};
 
 pub struct EventForwarder {
     tx: Sender<Event>,
