@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-may = "0.3.51"
 may_minihttp = "0.1.11"
-httpdate = "1.0"
+fxhash = "0.2"
+oxc = { version = "0.87", optional = true, features = ["transformer"] }
+notify = "8.2.0"
+crossbeam-channel = "0.5.15"
+
+[features]
+oxc_transformer = ["oxc"]
+default = []
