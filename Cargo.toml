@@ -1,14 +1,19 @@
 [package]
 name = "b-reach"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 may_minihttp = "0.1.11"
 fxhash = "0.2"
-oxc = { version = "0.87", optional = true, features = ["transformer"] }
+oxc = { version = "0.87", optional = true, features = ["transformer", "minifier"] }
 notify = "8.2.0"
 crossbeam-channel = "0.5.15"
+arc-swap = "1.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ctrlc = "3.4"
+memchr = "2.7"
 
 [features]
 oxc_transformer = ["oxc"]
