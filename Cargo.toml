@@ -6,15 +6,9 @@ edition = "2021"
 [dependencies]
 ntex = { version = "2.0", features = ["tokio"] }
 fxhash = "0.2"
-oxc = { version = "0.87", optional = true, features = ["transformer", "minifier"] }
+oxc = { version = "0.87", optional = true, features = ["transformer", "minifier", "semantic"] }
 notify = "8.2.0"
 crossbeam-channel = "0.5.15"
 arc-swap = "1.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-ctrlc = "3.4"
-memchr = "2.7"
-
-[features]
-oxc_transformer = ["oxc"]
-default = []

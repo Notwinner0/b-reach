@@ -81,9 +81,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "crossbeam-channel",
- "ctrlc",
  "fxhash",
- "memchr",
  "notify",
  "ntex",
  "oxc",
@@ -1096,6 +1094,7 @@ dependencies = [
  "oxc_minifier",
  "oxc_parser",
  "oxc_regular_expression",
+ "oxc_semantic",
  "oxc_span",
  "oxc_syntax",
  "oxc_transformer",

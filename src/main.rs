@@ -5,6 +5,7 @@ use ntex::web;
 use tracing::{error, info};
 use tracing_subscriber;
 
+mod compiler;
 mod parser;
 mod server;
 mod watch;

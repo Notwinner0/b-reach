@@ -234,44 +234,9 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
     result
 }
 
-#[cfg(feature = "oxc_transformer")]
-pub fn compile_typescript_with_oxc(filename: &str, ts: &str) -> Result<String, String> {
-    use oxc_transformer::{transform, TransformerOptions};
 
-    let opts = TransformerOptions::default();
 
-    match transform(filename, ts, &opts) {
-        Ok(result) => {
-            if let Some(code) = result.code() {
-                Ok(code.to_string())
-            } else {
-                Ok(format!("{}", result))
-            }
-        }
-        Err(e) => Err(format!("oxc transform error: {:?}", e)),
-    }
-}
 
-#[cfg(not(feature = "oxc_transformer"))]
-pub fn compile_typescript_with_oxc(_filename: &str, ts: &str) -> Result<String, String> {
-    Ok(ts.to_string())
-}
-
-#[cfg(feature = "oxc_transformer")]
-pub fn minify_js(js: &str) -> String {
-    use oxc_minifier::{minify, MinifierOptions};
-
-    let opts = MinifierOptions::default();
-    match minify("inline.js", js, &opts) {
-        Ok(result) => result.code().to_string(),
-        Err(_) => js.lines().map(|l| l.trim()).collect::<Vec<_>>().join("\n"),
-    }
-}
-
-#[cfg(not(feature = "oxc_transformer"))]
-pub fn minify_js(js: &str) -> String {
-    js.lines().map(|l| l.trim()).collect::<Vec<_>>().join("\n")
-}
 
 /// Prepares the parsed content for serving by compiling TypeScript, minifying JS, and injecting links.
 /// Generates a fingerprint for cache busting.
@@ -280,9 +245,15 @@ pub fn prepare(parsed: ParsedContent) -> PreparedContent {
 
     if parsed.js.is_none() && parsed.ts.is_some() {
         if let Some(ref ts_src) = parsed.ts {
-            match compile_typescript_with_oxc("inline.ts", ts_src) {
+            match crate::compiler::compile_typescript_with_oxc("inline.ts", ts_src) {
                 Ok(transpiled) => {
-                    parsed.js = Some(minify_js(&transpiled));
+                    match crate::compiler::minify_js(&transpiled) {
+                        Ok(minified) => parsed.js = Some(minified),
+                        Err(e) => {
+                            tracing::error!("JS minification failed: {}\nServing unminified JS.", e);
+                            parsed.js = Some(transpiled);
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!("TypeScript -> JS transpile failed: {}\nServing raw TypeScript as JS fallback.", e);
@@ -291,7 +262,13 @@ pub fn prepare(parsed: ParsedContent) -> PreparedContent {
             }
         }
     } else if let Some(ref js_src) = parsed.js {
-        parsed.js = Some(minify_js(js_src));
+        match crate::compiler::minify_js(js_src) {
+            Ok(minified) => parsed.js = Some(minified),
+            Err(e) => {
+                tracing::error!("JS minification failed: {}\nServing unminified JS.", e);
+                // Keep original
+            }
+        }
     }
 
     let mut hasher = FxHasher64::default();
