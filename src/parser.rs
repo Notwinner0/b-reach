@@ -105,7 +105,7 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
     let css = css_lines.join("\n");
     let ts = ts_lines.join("\n");
 
-    ParsedContent {
+    let parsed_content = ParsedContent {
         html: if html.trim().is_empty() {
             None
         } else {
@@ -118,7 +118,16 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
             Some(css)
         },
         ts: if ts.trim().is_empty() { None } else { Some(ts) },
-    }
+    };
+
+    tracing::info!("ParsedContent: HTML present: {}, JS present: {}, CSS present: {}, TS present: {}",
+        parsed_content.html.is_some(),
+        parsed_content.js.is_some(),
+        parsed_content.css.is_some(),
+        parsed_content.ts.is_some()
+    );
+
+    parsed_content
 }
 
 /// Finds the case-insensitive position of a substring within a string.

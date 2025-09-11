@@ -1,75 +1,101 @@
 use crate::parser;
 use arc_swap::ArcSwap;
-use may_minihttp::{HttpService, Request, Response};
-use std::io;
-
-pub fn no_cache(res: &mut Response) {
-    res.header("Cache-Control: no-cache");
-    res.header("X-Content-Type-Options: nosniff");
-    res.header("Accept-Ranges: bytes");
-}
-
-pub fn long_cache(res: &mut Response) {
-    res.header("Cache-Control: public, max-age=31536000, immutable");
-    res.header("X-Content-Type-Options: nosniff");
-    res.header("Accept-Ranges: bytes");
-}
+use ntex::web::{self, HttpResponse};
+use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct Page {
-    pub content: std::sync::Arc<ArcSwap<parser::PreparedContent>>,
+pub struct AppState {
+    pub content: Arc<ArcSwap<parser::PreparedContent>>,
 }
 
-impl HttpService for Page {
-    fn call(&mut self, req: Request, res: &mut Response) -> io::Result<()> {
-        let path = req.path();
-        let path = path.split_once('?').map(|(p, _)| p).unwrap_or(path);
-
-        let prepared = self.content.load();
-
-        match path {
-            "/" | "/index.html" => {
-                if let Some(ref html) = prepared.html_injected {
-                    res.header("Content-Type: text/html; charset=utf-8");
-                    res.body_vec(html.as_bytes().to_vec());
-                } else {
-                    res.status_code(404, "Not Found");
-                    res.body_vec(b"No HTML content found".to_vec());
-                }
-                no_cache(res);
-            }
-            "/style.css" => {
-                if let Some(ref css) = prepared.parsed.css {
-                    res.header("Content-Type: text/css; charset=utf-8");
-                    res.body_vec(css.as_bytes().to_vec());
-                } else {
-                    res.status_code(404, "Not Found");
-                    res.body_vec(b"CSS not found".to_vec());
-                }
-                no_cache(res);
-            }
-            "/script.js" => {
-                if let Some(ref js) = prepared.parsed.js {
-                    res.header("Content-Type: text/javascript; charset=utf-8");
-                    res.body_vec(js.as_bytes().to_vec());
-                } else {
-                    res.status_code(404, "Not Found");
-                    res.body_vec(b"JavaScript not found".to_vec());
-                }
-                no_cache(res);
-            }
-            "/favicon.ico" => {
-                res.status_code(204, "No Content");
-                res.body_vec(Vec::new());
-                long_cache(res);
-            }
-            _ => {
-                res.status_code(404, "Not Found");
-                res.body_vec(b"Page not found".to_vec());
-                no_cache(res);
-            }
+pub async fn index(data: web::types::State<AppState>) -> HttpResponse {
+    let prepared = data.content.load();
+    match prepared.html_injected.as_deref() {
+        Some(content) => {
+            tracing::info!("Serving content for path: /, MIME: text/html; charset=utf-8. Content length: {}", content.len());
+            HttpResponse::Ok()
+                .content_type("text/html; charset=utf-8")
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Accept-Ranges", "bytes")
+                .body(content.to_string())
         }
-
-        Ok(())
+        None => {
+            tracing::warn!("Resource not found for path: /, MIME: text/html; charset=utf-8. Data was None.");
+            HttpResponse::NotFound()
+                .content_type("text/plain")
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .body("Resource not found")
+        }
     }
+}
+
+pub async fn index_html(data: web::types::State<AppState>) -> HttpResponse {
+    index(data).await
+}
+
+pub async fn style_css(data: web::types::State<AppState>) -> HttpResponse {
+    let prepared = data.content.load();
+    let css_option = prepared.parsed.css.clone();
+    tracing::info!("Request for /style.css. CSS content present: {}", css_option.is_some());
+
+    match css_option.as_deref() {
+        Some(content) => {
+            tracing::info!("Serving content for path: /style.css, MIME: text/css; charset=utf-8. Content length: {}", content.len());
+            HttpResponse::Ok()
+                .content_type("text/css; charset=utf-8")
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Accept-Ranges", "bytes")
+                .body(content.to_string())
+        }
+        None => {
+            tracing::warn!("Resource not found for path: /style.css, MIME: text/css; charset=utf-8. Data was None.");
+            HttpResponse::NotFound()
+                .content_type("text/plain")
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .body("Resource not found")
+        }
+    }
+}
+
+pub async fn script_js(data: web::types::State<AppState>) -> HttpResponse {
+    let prepared = data.content.load();
+    match prepared.parsed.js.as_deref() {
+        Some(content) => {
+            tracing::info!("Serving content for path: /script.js, MIME: application/javascript; charset=utf-8. Content length: {}", content.len());
+            HttpResponse::Ok()
+                .content_type("application/javascript; charset=utf-8")
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Accept-Ranges", "bytes")
+                .body(content.to_string())
+        }
+        None => {
+            tracing::warn!("Resource not found for path: /script.js, MIME: application/javascript; charset=utf-8. Data was None.");
+            HttpResponse::NotFound()
+                .content_type("text/plain")
+                .header("Cache-Control", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .body("Resource not found")
+        }
+    }
+}
+
+pub async fn favicon_ico() -> HttpResponse {
+    HttpResponse::NoContent()
+        .header("Cache-Control", "public, max-age=31536000, immutable")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Accept-Ranges", "bytes")
+        .finish()
+}
+
+pub async fn not_found() -> HttpResponse {
+    HttpResponse::NotFound()
+        .content_type("text/plain")
+        .header("Cache-Control", "no-cache")
+        .header("X-Content-Type-Options", "nosniff")
+        .body("Page not found")
 }

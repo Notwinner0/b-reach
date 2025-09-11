@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-may_minihttp = "0.1.11"
+ntex = { version = "2.0", features = ["tokio"] }
 fxhash = "0.2"
 oxc = { version = "0.87", optional = true, features = ["transformer", "minifier"] }
 notify = "8.2.0"

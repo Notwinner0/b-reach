@@ -1,8 +1,7 @@
 use std::{error::Error, fs, path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
-use ctrlc;
-use may_minihttp::HttpServer;
+use ntex::web;
 use tracing::{error, info};
 use tracing_subscriber;
 
@@ -22,7 +21,8 @@ fn get_breach() -> Result<Option<PathBuf>, Box<dyn Error>> {
     Ok(None)
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[ntex::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
@@ -40,28 +40,46 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Start file watcher
     watch::watch_file(Arc::clone(&content), breach_path.clone());
 
-    let page = server::Page {
+    let state = server::AppState {
         content: Arc::clone(&content),
     };
-    let server = HttpServer(page).start("0.0.0.0:8080")?;
 
     info!(
-        "Server running on http://0.0.0.0:8080 serving {:?}",
+        "Server running on http://127.0.0.1:8080 serving {:?}",
         breach_path
     );
     info!("Edit the .breach file while the server is running (live reload).");
 
-    // Handle graceful shutdown
-    let server_handle = server;
-
-    ctrlc::set_handler(|| {
-        info!("Received shutdown signal, stopping server...");
-        std::process::exit(0);
-    })?;
-
-    if let Err(e) = server_handle.join() {
-        error!("Server error: {:?}", e);
-    }
+    web::server(move || {
+        web::App::new()
+            .state(state.clone())
+            .service(
+                web::resource("/")
+                    .route(web::get().to(server::index))
+            )
+            .service(
+                web::resource("/index.html")
+                    .route(web::get().to(server::index_html))
+            )
+            .service(
+                web::resource("/style.css")
+                    .route(web::get().to(server::style_css))
+            )
+            .service(
+                web::resource("/script.js")
+                    .route(web::get().to(server::script_js))
+            )
+            .service(
+                web::resource("/favicon.ico")
+                    .route(web::get().to(server::favicon_ico))
+            )
+            .default_service(
+                web::route().to(server::not_found)
+            )
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await?;
 
     Ok(())
 }
