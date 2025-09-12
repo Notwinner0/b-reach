@@ -24,9 +24,12 @@ impl notify::EventHandler for EventForwarder {
     }
 }
 
-pub fn watch_file(content: Arc<ArcSwap<parser::PreparedContent>>, path: PathBuf) {
+pub fn watch_file(content: Arc<ArcSwap<parser::PreparedContent>>, path: PathBuf, reload_tx: tokio::sync::broadcast::Sender<()>) {
     thread::spawn(move || {
         let mut last_fingerprint: u64 = content.load().fingerprint;
+
+        // Convert to absolute path for consistent comparison
+        let absolute_path = path.canonicalize().unwrap_or(path.clone());
 
         let (tx, rx) = unbounded();
         let forwarder = EventForwarder { tx };
@@ -41,35 +44,53 @@ pub fn watch_file(content: Arc<ArcSwap<parser::PreparedContent>>, path: PathBuf)
             }
         };
 
-        if let Err(e) = watcher.watch(&path, RecursiveMode::NonRecursive) {
+        if let Err(e) = watcher.watch(&absolute_path, RecursiveMode::NonRecursive) {
             error!("Failed to watch file: {}", e);
             return;
         }
 
         let mut last_event_time: Option<Instant> = None;
 
+        info!("File watcher started for: {:?}", path);
+
         loop {
             crossbeam_channel::select! {
                 recv(rx) -> event => {
                     if let Ok(event) = event {
+                        info!("File watcher event received: {:?} for paths: {:?}", event.kind, event.paths);
                         if let EventKind::Modify(_) = event.kind {
-                            if event.paths.contains(&path) {
+                            if event.paths.contains(&absolute_path) {
+                                info!("File modification detected for watched file: {:?}", absolute_path);
                                 last_event_time = Some(Instant::now());
+                            } else {
+                                info!("File modification detected but not for watched file. Watched: {:?}, Modified: {:?}", absolute_path, event.paths);
                             }
                         }
+                    } else {
+                        error!("File watcher received error event: {:?}", event);
                     }
                 }
                 default(Duration::from_millis(50)) => {
                     // Check if we have a pending event and enough time has passed
                     if let Some(event_time) = last_event_time {
                         if event_time.elapsed() >= Duration::from_millis(100) {
+                            info!("Processing pending file change after debounce period");
                             match parser::load_prepared_from_file(&path) {
                                 Ok(new_prepared) => {
                                     let new_fingerprint = new_prepared.fingerprint;
+                                    info!("Loaded new content with fingerprint: {} (old: {})", new_fingerprint, last_fingerprint);
                                     if new_fingerprint != last_fingerprint {
                                         content.store(Arc::new(new_prepared));
                                         last_fingerprint = new_fingerprint;
-                                        info!("Breach file updated and content refreshed.");
+                                        info!("Breach file updated and content refreshed. Sending reload notification.");
+
+                                        // Send reload notification to all connected clients
+                                        match reload_tx.send(()) {
+                                            Ok(_) => info!("Reload notification sent successfully"),
+                                            Err(e) => error!("Failed to send reload notification: {}", e),
+                                        }
+                                    } else {
+                                        info!("Fingerprint unchanged, no content update needed");
                                     }
                                 }
                                 Err(e) => {

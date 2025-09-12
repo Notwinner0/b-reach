@@ -5,7 +5,6 @@ use ntex::web;
 use tracing::{error, info};
 use tracing_subscriber;
 
-mod compiler;
 mod parser;
 mod server;
 mod watch;
@@ -24,8 +23,10 @@ fn get_breach() -> Result<Option<PathBuf>, Box<dyn Error>> {
 
 #[ntex::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Initialize tracing
-    tracing_subscriber::fmt::init();
+    // Initialize tracing with INFO level
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
     let breach_path = match get_breach()? {
         Some(p) => p,
@@ -35,14 +36,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    info!("Loading breach file: {:?}", breach_path);
     let prepared = parser::load_prepared_from_file(&breach_path)?;
+    info!("Breach file loaded successfully. TS present: {}, JS present: {}", prepared.parsed.ts.is_some(), prepared.parsed.js.is_some());
     let content = Arc::new(ArcSwap::from_pointee(prepared));
 
-    // Start file watcher
-    watch::watch_file(Arc::clone(&content), breach_path.clone());
+    // Create broadcast channel for live reload notifications
+    let (reload_tx, _) = tokio::sync::broadcast::channel(100);
+
+    // Start file watcher with reload notifications
+    watch::watch_file(Arc::clone(&content), breach_path.clone(), reload_tx.clone());
 
     let state = server::AppState {
         content: Arc::clone(&content),
+        reload_tx,
     };
 
     info!(
@@ -73,6 +80,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .service(
                 web::resource("/favicon.ico")
                     .route(web::get().to(server::favicon_ico))
+            )
+            .service(
+                web::resource("/ws")
+                    .route(web::get().to(server::ws_livereload))
             )
             .default_service(
                 web::route().to(server::not_found)

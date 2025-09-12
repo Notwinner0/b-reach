@@ -215,6 +215,7 @@ fn inject_js_script(html: &str, script_tag: &str) -> String {
 
 /// Injects CSS and JS link tags into the HTML content, handling various HTML structures.
 /// Preserves the title if present and adds links in the appropriate locations.
+/// Also injects livereload WebSocket script.
 pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u64) -> String {
     let (mut result, title_content) = extract_and_remove_title(html);
 
@@ -231,6 +232,55 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
         result = inject_js_script(&result, &script_tag);
     }
 
+    // Inject livereload WebSocket script
+    let livereload_script = r#"<script>
+(function() {
+    console.log('B-REACH: Initializing live reload...');
+    var ws = new WebSocket('ws://' + window.location.host + '/ws');
+    console.log('B-REACH: Attempting to connect to WebSocket at:', 'ws://' + window.location.host + '/ws');
+
+    ws.onopen = function(event) {
+        console.log('B-REACH: Live reload WebSocket connection established');
+    };
+
+    ws.onmessage = function(event) {
+        console.log('B-REACH: Received WebSocket message:', event.data);
+        if (event.data === 'reload') {
+            console.log('B-REACH: Reload signal received, refreshing page...');
+            window.location.reload();
+        } else {
+            console.log('B-REACH: Unknown message received:', event.data);
+        }
+    };
+
+    ws.onclose = function(event) {
+        console.log('B-REACH: Live reload WebSocket connection closed', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean
+        });
+    };
+
+    ws.onerror = function(error) {
+        console.error('B-REACH: Live reload WebSocket connection error:', error);
+        console.error('B-REACH: This may indicate the server is not running or WebSocket endpoint is unavailable');
+    };
+
+    // Log connection attempt every 5 seconds if not connected
+    var connectionCheck = setInterval(function() {
+        if (ws.readyState === WebSocket.CONNECTING) {
+            console.log('B-REACH: Still attempting to connect to live reload WebSocket...');
+        } else if (ws.readyState === WebSocket.CLOSED) {
+            console.warn('B-REACH: WebSocket connection is closed, attempting to reconnect...');
+            clearInterval(connectionCheck);
+        } else {
+            clearInterval(connectionCheck);
+        }
+    }, 5000);
+})();
+</script>"#;
+    result = inject_js_script(&result, livereload_script);
+
     result
 }
 
@@ -241,35 +291,9 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
 /// Prepares the parsed content for serving by compiling TypeScript, minifying JS, and injecting links.
 /// Generates a fingerprint for cache busting.
 pub fn prepare(parsed: ParsedContent) -> PreparedContent {
-    let mut parsed = parsed.clone();
+    let parsed = parsed.clone();
 
-    if parsed.js.is_none() && parsed.ts.is_some() {
-        if let Some(ref ts_src) = parsed.ts {
-            match crate::compiler::compile_typescript_with_oxc("inline.ts", ts_src) {
-                Ok(transpiled) => {
-                    match crate::compiler::minify_js(&transpiled) {
-                        Ok(minified) => parsed.js = Some(minified),
-                        Err(e) => {
-                            tracing::error!("JS minification failed: {}\nServing unminified JS.", e);
-                            parsed.js = Some(transpiled);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("TypeScript -> JS transpile failed: {}\nServing raw TypeScript as JS fallback.", e);
-                    parsed.js = Some(ts_src.clone());
-                }
-            }
-        }
-    } else if let Some(ref js_src) = parsed.js {
-        match crate::compiler::minify_js(js_src) {
-            Ok(minified) => parsed.js = Some(minified),
-            Err(e) => {
-                tracing::error!("JS minification failed: {}\nServing unminified JS.", e);
-                // Keep original
-            }
-        }
-    }
+
 
     let mut hasher = FxHasher64::default();
     if let Some(h) = &parsed.html {
@@ -280,6 +304,9 @@ pub fn prepare(parsed: ParsedContent) -> PreparedContent {
     }
     if let Some(j) = &parsed.js {
         hasher.write(j.as_bytes());
+    } else {
+        // Include a marker when no JS is present to differentiate fingerprints
+        hasher.write(b"NO_JS");
     }
     let fingerprint = hasher.finish();
 
