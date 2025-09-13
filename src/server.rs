@@ -53,12 +53,12 @@ pub async fn index_html(data: web::types::State<AppState>) -> HttpResponse {
 
 pub async fn style_css(data: web::types::State<AppState>) -> HttpResponse {
     let prepared = data.content.load();
-    tracing::info!("Request for /style.css. CSS content present: {}", prepared.parsed.css.is_some());
-    serve_content(&data, |p| p.parsed.css.as_ref(), "text/css", "/style.css")
+    tracing::info!("Request for /style.css. Styling content present: {}", prepared.parsed.styling.is_some());
+    serve_content(&data, |p| p.parsed.styling.as_ref(), "text/css", "/style.css")
 }
 
 pub async fn script_js(data: web::types::State<AppState>) -> HttpResponse {
-    serve_content(&data, |p| p.parsed.js.as_ref(), "application/javascript", "/script.js")
+    serve_content(&data, |p| p.parsed.script.as_ref(), "application/javascript", "/script.js")
 }
 
 pub async fn favicon_ico() -> HttpResponse {

@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Loading breach file: {:?}", breach_path);
     let prepared = parser::load_prepared_from_file(&breach_path)?;
-    info!("Breach file loaded successfully. TS present: {}, JS present: {}", prepared.parsed.ts.is_some(), prepared.parsed.js.is_some());
+    info!("Breach file loaded successfully. Script present: {}", prepared.parsed.script.is_some());
     let content = Arc::new(ArcSwap::from_pointee(prepared));
 
     // Create broadcast channel for live reload notifications

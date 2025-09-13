@@ -5,14 +5,12 @@ use std::{error::Error, fs, path::PathBuf};
 /// Represents the parsed content sections from a .breach file.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ParsedContent {
-    /// The HTML section content, if present.
-    pub html: Option<String>,
-    /// The JavaScript section content, if present.
-    pub js: Option<String>,
-    /// The CSS section content, if present.
-    pub css: Option<String>,
-    /// The TypeScript section content, if present.
-    pub ts: Option<String>,
+    /// The markup section content (e.g., HTML, Pug, HAML), if present.
+    pub markup: Option<String>,
+    /// The styling section content (e.g., CSS, Sass, Less), if present.
+    pub styling: Option<String>,
+    /// The script section content (e.g., JavaScript, TypeScript, CoffeeScript), if present.
+    pub script: Option<String>,
 }
 
 /// Represents the prepared content ready for serving, with injected links and fingerprint.
@@ -54,77 +52,71 @@ pub fn starts_with_section_marker(line: &str, name: &str) -> bool {
     ident.eq_ignore_ascii_case(name)
 }
 
-/// Parses the content of a .breach file into structured sections (HTML, JS, CSS, TS).
+/// Parses the content of a .breach file into structured sections using generic content types.
 pub fn parse_breach_content(content: &str) -> ParsedContent {
-    let mut html_lines = Vec::new();
-    let mut js_lines = Vec::new();
-    let mut css_lines = Vec::new();
-    let mut ts_lines = Vec::new();
+    let mut markup_lines = Vec::new();
+    let mut styling_lines = Vec::new();
+    let mut script_lines = Vec::new();
 
     #[derive(Copy, Clone, PartialEq, Eq)]
-    enum Section {
+    enum SectionType {
         None,
-        Html,
-        Js,
-        Css,
-        Ts,
+        Markup,
+        Styling,
+        Script,
     }
-    let mut cur = Section::None;
+    let mut cur = SectionType::None;
 
     let normalized = normalize_newlines(content.trim_start_matches('\u{feff}'));
 
     for line in normalized.lines() {
         if starts_with_section_marker(line, "html") {
-            cur = Section::Html;
-            continue;
-        }
-        if starts_with_section_marker(line, "js") {
-            cur = Section::Js;
+            cur = SectionType::Markup;
             continue;
         }
         if starts_with_section_marker(line, "css") {
-            cur = Section::Css;
+            cur = SectionType::Styling;
             continue;
         }
-        if starts_with_section_marker(line, "ts") || starts_with_section_marker(line, "typescript")
+        if starts_with_section_marker(line, "js") || starts_with_section_marker(line, "ts") || starts_with_section_marker(line, "typescript")
         {
-            cur = Section::Ts;
+            cur = SectionType::Script;
             continue;
         }
         match cur {
-            Section::Html => html_lines.push(line),
-            Section::Js => js_lines.push(line),
-            Section::Css => css_lines.push(line),
-            Section::Ts => ts_lines.push(line),
-            Section::None => {}
+            SectionType::Markup => markup_lines.push(line),
+            SectionType::Styling => styling_lines.push(line),
+            SectionType::Script => script_lines.push(line),
+            SectionType::None => {}
         }
     }
 
-    let html = html_lines.join("\n");
-    let js = js_lines.join("\n");
-    let css = css_lines.join("\n");
-    let ts = ts_lines.join("\n");
+    let markup = markup_lines.join("\n");
+    let styling = styling_lines.join("\n");
+    let script = script_lines.join("\n");
 
     let parsed_content = ParsedContent {
-        html: if html.trim().is_empty() {
+        markup: if markup.trim().is_empty() {
             None
         } else {
-            Some(html)
+            Some(markup)
         },
-        js: if js.trim().is_empty() { None } else { Some(js) },
-        css: if css.trim().is_empty() {
+        styling: if styling.trim().is_empty() {
             None
         } else {
-            Some(css)
+            Some(styling)
         },
-        ts: if ts.trim().is_empty() { None } else { Some(ts) },
+        script: if script.trim().is_empty() {
+            None
+        } else {
+            Some(script)
+        },
     };
 
-    tracing::info!("ParsedContent: HTML present: {}, JS present: {}, CSS present: {}, TS present: {}",
-        parsed_content.html.is_some(),
-        parsed_content.js.is_some(),
-        parsed_content.css.is_some(),
-        parsed_content.ts.is_some()
+    tracing::info!("ParsedContent: Markup present: {}, Styling present: {}, Script present: {}",
+        parsed_content.markup.is_some(),
+        parsed_content.styling.is_some(),
+        parsed_content.script.is_some()
     );
 
     parsed_content
@@ -293,27 +285,25 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
 pub fn prepare(parsed: ParsedContent) -> PreparedContent {
     let parsed = parsed.clone();
 
-
-
     let mut hasher = FxHasher64::default();
-    if let Some(h) = &parsed.html {
-        hasher.write(h.as_bytes());
+    if let Some(m) = &parsed.markup {
+        hasher.write(m.as_bytes());
     }
-    if let Some(c) = &parsed.css {
-        hasher.write(c.as_bytes());
+    if let Some(s) = &parsed.styling {
+        hasher.write(s.as_bytes());
     }
-    if let Some(j) = &parsed.js {
-        hasher.write(j.as_bytes());
+    if let Some(s) = &parsed.script {
+        hasher.write(s.as_bytes());
     } else {
-        // Include a marker when no JS is present to differentiate fingerprints
-        hasher.write(b"NO_JS");
+        // Include a marker when no script is present to differentiate fingerprints
+        hasher.write(b"NO_SCRIPT");
     }
     let fingerprint = hasher.finish();
 
     let html_injected = parsed
-        .html
+        .markup
         .as_deref()
-        .map(|h| inject_links_once(h, parsed.css.is_some(), parsed.js.is_some(), fingerprint));
+        .map(|m| inject_links_once(m, parsed.styling.is_some(), parsed.script.is_some(), fingerprint));
 
     PreparedContent {
         fingerprint,
