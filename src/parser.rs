@@ -7,7 +7,7 @@ use std::{error::Error, fs, path::PathBuf};
 pub struct ParsedContent {
     /// The markup section content (e.g., HTML, Pug, HAML), if present.
     pub markup: Option<String>,
-    /// The styling section content (e.g., CSS, Sass, Less), if present.
+    /// The styling section content with embedded type markers, if present.
     pub styling: Option<String>,
     /// The script section content (e.g., JavaScript, TypeScript, CoffeeScript), if present.
     pub script: Option<String>,
@@ -55,14 +55,16 @@ pub fn starts_with_section_marker(line: &str, name: &str) -> bool {
 /// Parses the content of a .breach file into structured sections using generic content types.
 pub fn parse_breach_content(content: &str) -> ParsedContent {
     let mut markup_lines = Vec::new();
-    let mut styling_lines = Vec::new();
+    let mut css_styling_lines = Vec::new();
+    let mut scss_styling_lines = Vec::new();
     let mut script_lines = Vec::new();
 
     #[derive(Copy, Clone, PartialEq, Eq)]
     enum SectionType {
         None,
         Markup,
-        Styling,
+        CssStyling,
+        ScssStyling,
         Script,
     }
     let mut cur = SectionType::None;
@@ -75,7 +77,11 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
             continue;
         }
         if starts_with_section_marker(line, "css") {
-            cur = SectionType::Styling;
+            cur = SectionType::CssStyling;
+            continue;
+        }
+        if starts_with_section_marker(line, "scss") {
+            cur = SectionType::ScssStyling;
             continue;
         }
         if starts_with_section_marker(line, "js") || starts_with_section_marker(line, "ts") || starts_with_section_marker(line, "typescript")
@@ -85,15 +91,32 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
         }
         match cur {
             SectionType::Markup => markup_lines.push(line),
-            SectionType::Styling => styling_lines.push(line),
+            SectionType::CssStyling => css_styling_lines.push(line),
+            SectionType::ScssStyling => scss_styling_lines.push(line),
             SectionType::Script => script_lines.push(line),
             SectionType::None => {}
         }
     }
 
     let markup = markup_lines.join("\n");
-    let styling = styling_lines.join("\n");
+    let css_styling = css_styling_lines.join("\n");
+    let scss_styling = scss_styling_lines.join("\n");
     let script = script_lines.join("\n");
+
+    // Combine styling sections with markers
+    let mut styling_sections = Vec::new();
+    if !css_styling.trim().is_empty() {
+        styling_sections.push(format!("/* CSS */\n{}\n/* EOF */", css_styling));
+    }
+    if !scss_styling.trim().is_empty() {
+        styling_sections.push(format!("/* SCSS */\n{}\n/* EOF */", scss_styling));
+    }
+
+    let combined_styling = if styling_sections.is_empty() {
+        None
+    } else {
+        Some(styling_sections.join("\n\n"))
+    };
 
     let parsed_content = ParsedContent {
         markup: if markup.trim().is_empty() {
@@ -101,11 +124,7 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
         } else {
             Some(markup)
         },
-        styling: if styling.trim().is_empty() {
-            None
-        } else {
-            Some(styling)
-        },
+        styling: combined_styling,
         script: if script.trim().is_empty() {
             None
         } else {
@@ -120,6 +139,23 @@ pub fn parse_breach_content(content: &str) -> ParsedContent {
     );
 
     parsed_content
+}
+
+/// Compiles SCSS content to CSS using the grass compiler.
+/// Returns the compiled CSS or an error if compilation fails.
+pub fn compile_scss_to_css(scss_content: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let options = grass::Options::default();
+    match grass::from_string(scss_content.to_string(), &options) {
+        Ok(css) => {
+            tracing::info!("SCSS compilation successful, {} bytes -> {} bytes",
+                scss_content.len(), css.len());
+            Ok(css)
+        }
+        Err(e) => {
+            tracing::error!("SCSS compilation failed: {}", e);
+            Err(e.into())
+        }
+    }
 }
 
 /// Finds the case-insensitive position of a substring within a string.
@@ -280,11 +316,72 @@ pub fn inject_links_once(html: &str, has_css: bool, has_js: bool, fingerprint: u
 
 
 
-/// Prepares the parsed content for serving by compiling TypeScript, minifying JS, and injecting links.
+/// Processes styling content with markers and compiles as needed.
+/// Returns the final CSS content.
+fn process_styling_content(styling_content: &str) -> String {
+    let mut final_css_sections = Vec::new();
+
+    // Split by /* EOF */ markers to get individual sections
+    let sections = styling_content.split("/* EOF */");
+
+    for section in sections {
+        let trimmed = section.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(css_content) = trimmed.strip_prefix("/* CSS */") {
+            // CSS content - use as-is
+            let css = css_content.trim();
+            if !css.is_empty() {
+                final_css_sections.push(css.to_string());
+            }
+        } else if let Some(scss_content) = trimmed.strip_prefix("/* SCSS */") {
+            // SCSS content - compile it
+            let scss = scss_content.trim();
+            if !scss.is_empty() {
+                match compile_scss_to_css(scss) {
+                    Ok(compiled_css) => {
+                        final_css_sections.push(compiled_css);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to compile SCSS, using original: {}", e);
+                        final_css_sections.push(scss.to_string());
+                    }
+                }
+            }
+        } else {
+            // Unknown marker or legacy content - treat as CSS
+            if !trimmed.is_empty() {
+                final_css_sections.push(trimmed.to_string());
+            }
+        }
+    }
+
+    final_css_sections.join("\n\n")
+}
+
+/// Prepares the parsed content for serving by compiling SCSS to CSS and injecting links.
 /// Generates a fingerprint for cache busting.
 pub fn prepare(parsed: ParsedContent) -> PreparedContent {
-    let parsed = parsed.clone();
+    let mut parsed = parsed;
 
+    // Process styling content with markers
+    let final_css = if let Some(styling_content) = &parsed.styling {
+        let processed_css = process_styling_content(styling_content);
+        if processed_css.trim().is_empty() {
+            None
+        } else {
+            Some(processed_css)
+        }
+    } else {
+        None
+    };
+
+    // Update parsed content with final CSS
+    parsed.styling = final_css.clone();
+
+    // Generate fingerprint including all content
     let mut hasher = FxHasher64::default();
     if let Some(m) = &parsed.markup {
         hasher.write(m.as_bytes());
@@ -300,6 +397,7 @@ pub fn prepare(parsed: ParsedContent) -> PreparedContent {
     }
     let fingerprint = hasher.finish();
 
+    // Generate HTML with injected links
     let html_injected = parsed
         .markup
         .as_deref()

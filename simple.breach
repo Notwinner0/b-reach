@@ -1,20 +1,64 @@
 ﻿¦html
 <!DOCTYPE html>
 <html>
-<head><title>HTML Tutorial</title></head>
+<head><title>SCSS Test</title></head>
 <body>
-
-<h1>This is a heading</h1>
-<p>This is a paragraph.</p>
-<p>Live reload test - manual change at 2025-09-12 04:32</p>
-go go go
-yay i think it finally works :)
+    <h1>SCSS Compilation Test</h1>
+    <div class="container">
+        <p class="primary-text">This text should be styled with SCSS variables</p>
+        <p class="secondary-text">This is secondary styled text</p>
+    </div>
+    <div class="card">
+        <h2>Card Title</h2>
+        <p>Card content with nested styles</p>
+    </div>
 </body>
 </html>
-¦js
-console.log("B⧸REACH ACTIVE")
-¦css
-* {
-    color: white;
-    background-color: black;
+¦scss
+$primary-color: #007bff;
+$secondary-color: #6c757d;
+$font-size: 16px;
+$border-radius: 5px;
+
+body {
+    font-family: Arial, sans-serif;
+    font-size: $font-size;
+    margin: 0;
+    padding: 20px;
+    background-color: #f8f9fa;
 }
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.primary-text {
+    color: $primary-color;
+    font-weight: bold;
+}
+
+.secondary-text {
+    color: $secondary-color;
+    font-style: italic;
+}
+
+.card {
+    background: white;
+    border-radius: $border-radius;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+    h2 {
+        color: $primary-color;
+        margin-top: 0;
+    }
+
+    p {
+        line-height: 1.6;
+    }
+}
+¦js
+console.log("B-REACH: SCSS test loaded");
