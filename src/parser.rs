@@ -39,12 +39,12 @@ pub fn normalize_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-/// Checks if a line starts with a section marker (¦ or |) followed by the given name.
+/// Checks if a line starts with a section marker (¦) followed by the given name.
 pub fn starts_with_section_marker(line: &str, name: &str) -> bool {
     let line = line.trim_start();
     let mut chars = line.chars();
     let first = match chars.next() {
-        Some(c) if c == '¦' || c == '|' => c,
+        Some(c) if c == '¦' => c, // accepts only the special one which is extremely rarely used in any kind of text
         _ => return false,
     };
     let rest = &line[first.len_utf8()..];
