@@ -5,7 +5,7 @@
     The single-file web development ecosystem.
   </p>
 
-  <a href="https://github.com/Notwinner0/b-reach/actions"><img src="https://github.com/Notwinner0/b-reach/actions/workflows/go.yml/badge.svg?branch=main" alt="Build Status"></a>
+  <a href="https://github.com/Notwinner0/b-reach/actions"><img src="https://github.com/Notwinner0/b-reach/actions/workflows/rust.yml/badge.svg?branch=main" alt="Build Status"></a>
   <a href="http://github.com/Notwinner0/b-reach/releases"><img src="https://img.shields.io/github/v/tag/Notwinner0/b-reach" alt="Version"></a>
   <a href="https://github.com/Notwinner0/b-reach?tab=MIT-1-ov-file#readme"><img src="https://img.shields.io/github/license/Notwinner0/b-reach" alt="License"></a>
   <a href="https://github.com/Notwinner0/b-reach/graphs/contributors"><img src="https://img.shields.io/github/contributors/Notwinner0/b-reach" alt="Contributors"></a>
